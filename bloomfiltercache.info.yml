@@ -1,0 +1,4 @@
+name: Bloom Filter Cache
+type: module
+description: 'Cache wrapper to limit usage from infrequently accessed items.'
+core: 8.x

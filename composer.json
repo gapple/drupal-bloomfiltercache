@@ -1,0 +1,16 @@
+{
+  "name": "drupal/bloomfiltercache",
+  "type": "drupal-module",
+  "description": "Cache wrapper to limit usage from infrequently accessed items.",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/bloomfiltercache",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/bloomfiltercache",
+    "source": "http://cgit.drupalcode.org/bloomfiltercache"
+  },
+  "require": {
+    "pleonasm/bloom-filter": "^1.0.2"
+  }
+}

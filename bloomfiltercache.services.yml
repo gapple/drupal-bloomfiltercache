@@ -1,0 +1,7 @@
+services:
+  bloomfiltercache.page:
+    class: Drupal\bloomfiltercache\Cache\BloomFilterCacheDecorator
+    arguments: ['@bloomfiltercache.page.inner', '@cache.default', 'page', 10000]
+    decorates: cache.page
+    tags:
+      - { name: needs_destruction }

@@ -1,7 +1,14 @@
 services:
+  cache.bloomfilter:
+    class: Drupal\Core\Cache\CacheBackendInterface
+    tags:
+      - { name: cache.bin }
+    factory: cache_factory:get
+    arguments: [bloomfilter]
+
   bloomfiltercache.page:
     class: Drupal\bloomfiltercache\Cache\BloomFilterCacheDecorator
-    arguments: ['@bloomfiltercache.page.inner', '@cache.default', 'page', 10000]
+    arguments: ['@bloomfiltercache.page.inner', '@cache.bloomfilter', 'page', 10000]
     decorates: cache.page
     tags:
       - { name: needs_destruction }

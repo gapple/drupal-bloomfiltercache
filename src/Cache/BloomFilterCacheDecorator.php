@@ -36,11 +36,11 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
   private $filter;
 
   /**
-   * Flag if any new keys have been added to the filter.
+   * Array of new keys to be added to the filter.
    *
-   * @var bool
+   * @var array
    */
-  private $filterUpdated = FALSE;
+  private $filterAdditions = [];
 
   /**
    * The id for this filter.
@@ -113,7 +113,26 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    * {@inheritdoc}
    */
   public function destruct() {
-    if ($this->filterUpdated) {
+    if (empty($this->filterAdditions)) {
+      return;
+    }
+
+    $this->initializeFilter();
+
+    // Filter list to new cids.
+    $additions = array_filter(
+      array_keys($this->filterAdditions),
+      function ($item) {
+        return !$this->filter->exists($item);
+      }
+    );
+
+    // Only update stored filter if changes have been added.
+    if (!empty($additions)) {
+      foreach ($additions as $cid) {
+        $this->filter->add($cid);
+      }
+
       $this->storage->set($this->getStorageCid(), $this->filter);
     }
   }
@@ -122,13 +141,19 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    * {@inheritdoc}
    */
   public function get($cid, $allow_invalid = FALSE) {
-    return $this->decoratedCache->get($cid, $allow_invalid);
+    $cids = [$cid];
+    $cache = $this->getMultiple($cids, $allow_invalid);
+    return reset($cache);
   }
 
   /**
    * {@inheritdoc}
    */
   public function getMultiple(&$cids, $allow_invalid = FALSE) {
+    foreach ($cids as $cid) {
+      $this->filterAdditions[$cid] = TRUE;
+    }
+
     return $this->decoratedCache->getMultiple($cids, $allow_invalid);
   }
 
@@ -136,15 +161,13 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    * {@inheritdoc}
    */
   public function set($cid, $data, $expire = Cache::PERMANENT, array $tags = []) {
-    $this->initializeFilter();
-
-    if ($this->filter->exists($cid)) {
-      $this->decoratedCache->set($cid, $data, $expire, $tags);
-    }
-    else {
-      $this->filter->add($cid);
-      $this->filterUpdated = TRUE;
-    }
+    $this->setMultiple([
+      $cid => [
+        'data' => $data,
+        'expire' => $expire,
+        'tags' => $tags,
+      ],
+    ]);
   }
 
   /**
@@ -156,12 +179,12 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
     foreach ($items as $cid => $item) {
       if (!$this->filter->exists($cid)) {
         unset($items[$cid]);
-        $this->filter->add($cid);
-        $this->filterUpdated = TRUE;
       }
     }
 
-    $this->decoratedCache->setMultiple($items);
+    if (!empty($items)) {
+      $this->decoratedCache->setMultiple($items);
+    }
   }
 
   /**

@@ -3,6 +3,7 @@
 namespace Drupal\Tests\bloomfiltercache\Cache;
 
 use Drupal\bloomfiltercache\Cache\BloomFilterCacheDecorator;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\MemoryBackend;
 use Drupal\Tests\UnitTestCase;
 
@@ -40,10 +41,13 @@ class BloomFilterDecoratorTests extends UnitTestCase {
   public function setUp() {
     $this->decoratedCache = $this->createMock(MemoryBackend::class);
     $this->storageCache = $this->createMock(MemoryBackend::class);
+    /** @var \Drupal\Component\Datetime\TimeInterface|\PHPUnit_Framework_MockObject_MockObject $timeService */
+    $timeService = $this->createMock(TimeInterface::class);
 
     $this->bloomFilterCacheDecorator = new BloomFilterCacheDecorator(
       $this->decoratedCache,
       $this->storageCache,
+      $timeService,
       'test'
     );
   }

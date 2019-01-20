@@ -2,6 +2,7 @@
 
 namespace Drupal\bloomfiltercache\Cache;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\DestructableInterface;
@@ -29,6 +30,13 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
   private $storage;
 
   /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  private $time;
+
+  /**
    * The bloom filter.
    *
    * @var \Pleo\BloomFilter\BloomFilter
@@ -50,18 +58,11 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
   private $bin;
 
   /**
-   * Approximate number of items to be stored in the cache.
+   * Options for the bloom filter.
    *
-   * @var int
+   * @var array
    */
-  private $approximateSize;
-
-  /**
-   * Probability of the bloom filter to return a false positive.
-   *
-   * @var float
-   */
-  private $falsePositiveProbability;
+  private $filterOptions;
 
   /**
    * Create a new Bloom Filter Cache Decorator.
@@ -70,19 +71,24 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    *   The original cache service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $bloomFilterStorage
    *   The service to store bloom filter data.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
    * @param string $bin
    *   The cache bin for this filter.
-   * @param int $approximateSize
-   *   Approximate number of items stored in the cache.
-   * @param float $falsePositiveProbability
-   *   Probability of the bloom filter returning a false positive.
+   * @param array $filterOptions
+   *   A keyed array of options to provide to the bloom filter.
    */
-  public function __construct(CacheBackendInterface $decoratedCache, CacheBackendInterface $bloomFilterStorage, $bin, $approximateSize = 1000, $falsePositiveProbability = 0.01) {
+  public function __construct(CacheBackendInterface $decoratedCache, CacheBackendInterface $bloomFilterStorage, TimeInterface $time, $bin, array $filterOptions = []) {
     $this->decoratedCache = $decoratedCache;
     $this->storage = $bloomFilterStorage;
+    $this->time = $time;
     $this->bin = $bin;
-    $this->approximateSize = $approximateSize;
-    $this->falsePositiveProbability = $falsePositiveProbability;
+    $this->filterOptions = $filterOptions +
+      [
+        'size' => 1000,
+        'probability' => 0.01,
+        'lifetime' => CacheBackendInterface::CACHE_PERMANENT,
+      ];
   }
 
   /**
@@ -104,7 +110,7 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
         $this->filter = $cacheItem->data;
       }
       else {
-        $this->filter = BloomFilter::init($this->approximateSize, $this->falsePositiveProbability);
+        $this->filter = BloomFilter::init($this->filterOptions['size'], $this->filterOptions['probability']);
       }
     }
   }
@@ -133,7 +139,13 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
         $this->filter->add($cid);
       }
 
-      $this->storage->set($this->getStorageCid(), $this->filter);
+      $this->storage->set(
+        $this->getStorageCid(),
+        $this->filter,
+        $this->filterOptions['lifetime'] == CacheBackendInterface::CACHE_PERMANENT ?
+          CacheBackendInterface::CACHE_PERMANENT :
+          $this->time->getRequestTime() + $this->filterOptions['lifetime']
+      );
     }
   }
 

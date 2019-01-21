@@ -166,7 +166,19 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
       $this->filterAdditions[$cid] = TRUE;
     }
 
-    return $this->decoratedCache->getMultiple($cids, $allow_invalid);
+    $items = $this->decoratedCache->getMultiple($cids, $allow_invalid);
+
+    if (!empty($items)) {
+      // Add cids returned from the cache so that any sets on the same cid
+      // during this request overwrite the cached data.
+      $this->initializeFilter();
+
+      foreach ($items as $cid => $item) {
+        $this->filter->add($cid);
+      }
+    }
+
+    return $items;
   }
 
   /**

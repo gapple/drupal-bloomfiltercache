@@ -8,7 +8,7 @@ services:
 
   bloomfiltercache.page:
     class: Drupal\bloomfiltercache\Cache\BloomFilterCacheDecorator
-    arguments: ['@bloomfiltercache.page.inner', '@cache.bloomfilter', '@datetime.time', 'page', {size: 10000, lifetime: 86400}]
+    arguments: ['@bloomfiltercache.page.inner', '@cache.bloomfilter', '@datetime.time', '@lock', 'page', {size: 10000, lifetime: 86400}]
     decorates: cache.page
     tags:
       - { name: needs_destruction }

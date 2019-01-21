@@ -6,6 +6,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\DestructableInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Pleo\BloomFilter\BloomFilter;
 
 /**
@@ -35,6 +36,13 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    * @var \Drupal\Component\Datetime\TimeInterface
    */
   private $time;
+
+  /**
+   * The lock service.
+   *
+   * @var \Drupal\Core\Lock\LockBackendInterface
+   */
+  private $lock;
 
   /**
    * The bloom filter.
@@ -73,15 +81,18 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    *   The service to store bloom filter data.
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock service.
    * @param string $bin
    *   The cache bin for this filter.
    * @param array $filterOptions
    *   A keyed array of options to provide to the bloom filter.
    */
-  public function __construct(CacheBackendInterface $decoratedCache, CacheBackendInterface $bloomFilterStorage, TimeInterface $time, $bin, array $filterOptions = []) {
+  public function __construct(CacheBackendInterface $decoratedCache, CacheBackendInterface $bloomFilterStorage, TimeInterface $time, LockBackendInterface $lock, $bin, array $filterOptions = []) {
     $this->decoratedCache = $decoratedCache;
     $this->storage = $bloomFilterStorage;
     $this->time = $time;
+    $this->lock = $lock;
     $this->bin = $bin;
     $this->filterOptions = $filterOptions +
       [
@@ -123,30 +134,57 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
       return;
     }
 
-    $this->initializeFilter();
+    $additions = array_keys($this->filterAdditions);
+    $expire = CacheBackendInterface::CACHE_PERMANENT;
 
-    // Filter list to new cids.
-    $additions = array_filter(
-      array_keys($this->filterAdditions),
-      function ($item) {
+    // Acquire a lock and reload the latest filter data from cache so that any
+    // changes from a separate request are not overwritten.
+    if (!$this->lock->lockMayBeAvailable($this->getStorageCid())) {
+      $this->lock->wait($this->getStorageCid());
+    }
+    if (!$this->lock->acquire($this->getStorageCid())) {
+      // If lock wait was not successful, it's okay to discard this request's
+      // updates.
+      return;
+    }
+
+    if ($cacheItem = $this->storage->get($this->getStorageCid())) {
+      $this->filter = $cacheItem->data;
+      // Preserve the original expiry timestamp.
+      $expire = $cacheItem->expire;
+
+      // Filter list to new cids.
+      $additions = array_filter($additions, function ($item) {
         return !$this->filter->exists($item);
+      });
+
+      // All of the cids from this request are already added to the filter.
+      if (empty($additions)) {
+        $this->lock->release($this->getStorageCid());
+        return;
       }
+    }
+    else {
+      // Initialize a new empty filter in case a filter was retrieved from cache
+      // early in the request but since expired.
+      $this->filter = BloomFilter::init($this->filterOptions['size'], $this->filterOptions['probability']);
+
+      if ($this->filterOptions['lifetime'] != CacheBackendInterface::CACHE_PERMANENT) {
+        $expire = $this->time->getRequestTime() + $this->filterOptions['lifetime'];
+      }
+    }
+
+    foreach ($additions as $cid) {
+      $this->filter->add($cid);
+    }
+
+    $this->storage->set(
+      $this->getStorageCid(),
+      $this->filter,
+      $expire
     );
 
-    // Only update stored filter if changes have been added.
-    if (!empty($additions)) {
-      foreach ($additions as $cid) {
-        $this->filter->add($cid);
-      }
-
-      $this->storage->set(
-        $this->getStorageCid(),
-        $this->filter,
-        $this->filterOptions['lifetime'] == CacheBackendInterface::CACHE_PERMANENT ?
-          CacheBackendInterface::CACHE_PERMANENT :
-          $this->time->getRequestTime() + $this->filterOptions['lifetime']
-      );
-    }
+    $this->lock->release($this->getStorageCid());
   }
 
   /**

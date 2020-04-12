@@ -171,6 +171,51 @@ class BloomFilterDecoratorTests extends UnitTestCase {
   }
 
   /**
+   * An item not retrieved earlier in the request should always be set.
+   *
+   * @covers ::__construct
+   * @covers ::initializeFilter
+   * @covers ::getStorageCid
+   * @covers ::destruct
+   * @covers ::get
+   * @covers ::getMultiple
+   * @covers ::set
+   * @covers ::setMultiple
+   */
+  public function testBlindSet() {
+    $this->decoratedCache->expects($this->exactly(2))
+      ->method('setMultiple')
+      ->withConsecutive(
+        [
+          [
+            'testcid' => [
+              'data' => 'testValue1',
+              'expire' => -1,
+              'tags' => [],
+            ],
+          ],
+        ],
+        [
+          [
+            'testcid' => [
+              'data' => 'testValue2',
+              'expire' => -1,
+              'tags' => [],
+            ],
+          ],
+        ]
+      );
+    $this->bloomFilterCacheDecorator->set('testcid', 'testValue1');
+    $this->bloomFilterCacheDecorator->set('testcid', 'testValue2');
+
+    // Simulate end of request - new filter entries should be persisted.
+    $this->storageCache->expects($this->once())
+      ->method('set')
+      ->with('bloomfiltercache.test', $this->anything());
+    $this->bloomFilterCacheDecorator->destruct();
+  }
+
+  /**
    * Test that the filter in storage is deleted if bin removed.
    *
    * @covers ::removeBin

@@ -247,7 +247,14 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
     $this->initializeFilter();
 
     foreach ($items as $cid => $item) {
-      if (!$this->filter->exists($cid)) {
+      if (!array_key_exists($cid, $this->filterAdditions)) {
+        // If cid has not been previously retrieved during this request, it must
+        // be persisted to the decorated cache to ensure that it overwrites any
+        // existing (now stale) stored value.
+        $this->filterAdditions[$cid] = TRUE;
+        $this->filter->add($cid);
+      }
+      elseif (!$this->filter->exists($cid)) {
         unset($items[$cid]);
       }
     }

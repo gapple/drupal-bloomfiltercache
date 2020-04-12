@@ -4,7 +4,9 @@ namespace Drupal\Tests\bloomfiltercache\Cache;
 
 use Drupal\bloomfiltercache\Cache\BloomFilterCacheDecorator;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\MemoryBackend;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Tests\UnitTestCase;
 
 /**
@@ -24,14 +26,14 @@ class BloomFilterDecoratorTests extends UnitTestCase {
   /**
    * The decorated cache.
    *
-   * @var \Drupal\Core\Cache\CacheBackendInterface|\PHPUnit_Framework_MockObject_MockObject
+   * @var \Drupal\Core\Cache\CacheBackendInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   private $decoratedCache;
 
   /**
    * The storage cache for bloom filters.
    *
-   * @var \Drupal\Core\Cache\CacheBackendInterface|\PHPUnit_Framework_MockObject_MockObject
+   * @var \Drupal\Core\Cache\CacheBackendInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   private $storageCache;
 
@@ -41,14 +43,21 @@ class BloomFilterDecoratorTests extends UnitTestCase {
   public function setUp() {
     $this->decoratedCache = $this->createMock(MemoryBackend::class);
     $this->storageCache = $this->createMock(MemoryBackend::class);
-    /** @var \Drupal\Component\Datetime\TimeInterface|\PHPUnit_Framework_MockObject_MockObject $timeService */
+    /** @var \Drupal\Component\Datetime\TimeInterface|\PHPUnit\Framework\MockObject\MockObject $timeService */
     $timeService = $this->createMock(TimeInterface::class);
+    /** @var \Drupal\Core\Lock\LockBackendInterface|\PHPUnit\Framework\MockObject\MockObject $lockService */
+    $lockService = $this->createMock(LockBackendInterface::class);
+    $lockService->method('lockMayBeAvailable')
+      ->willReturn(TRUE);
+    $lockService->method('acquire')
+      ->willReturn(TRUE);
 
     $this->bloomFilterCacheDecorator = new BloomFilterCacheDecorator(
+      'test',
       $this->decoratedCache,
       $this->storageCache,
       $timeService,
-      'test'
+      $lockService
     );
   }
 
@@ -117,6 +126,48 @@ class BloomFilterDecoratorTests extends UnitTestCase {
 
     $this->bloomFilterCacheDecorator->get('testcid');
     $this->bloomFilterCacheDecorator->set('testcid', 'testValue');
+  }
+
+  /**
+   * An already cached item should be persisted on the same request.
+   *
+   * @covers ::__construct
+   * @covers ::initializeFilter
+   * @covers ::getStorageCid
+   * @covers ::destruct
+   * @covers ::get
+   * @covers ::getMultiple
+   * @covers ::set
+   * @covers ::setMultiple
+   */
+  public function testAlreadyCached() {
+    $this->decoratedCache->expects($this->atLeastOnce())
+      ->method('getMultiple')
+      ->with(['testcid'])
+      ->willReturn([
+        'testcid' => (object) [
+          'data' => TRUE,
+          'expire' => CacheBackendInterface::CACHE_PERMANENT,
+        ],
+      ]);
+
+    $this->decoratedCache->expects($this->once())
+      ->method('setMultiple')
+      ->with([
+        'testcid' => [
+          'data' => 'testValue',
+          'expire' => -1,
+          'tags' => [],
+        ],
+      ]);
+    $this->bloomFilterCacheDecorator->get('testcid');
+    $this->bloomFilterCacheDecorator->set('testcid', 'testValue');
+
+    // Simulate end of request - new filter entries should be persisted.
+    $this->storageCache->expects($this->once())
+      ->method('set')
+      ->with('bloomfiltercache.test', $this->anything());
+    $this->bloomFilterCacheDecorator->destruct();
   }
 
   /**

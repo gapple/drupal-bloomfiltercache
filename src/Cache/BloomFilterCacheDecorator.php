@@ -5,6 +5,7 @@ namespace Drupal\bloomfiltercache\Cache;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Cache\DatabaseBackend;
 use Drupal\Core\DestructableInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Pleo\BloomFilter\BloomFilter;
@@ -75,6 +76,8 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
   /**
    * Create a new Bloom Filter Cache Decorator.
    *
+   * @param string $bin
+   *   The cache bin for this filter.
    * @param \Drupal\Core\Cache\CacheBackendInterface $decoratedCache
    *   The original cache service.
    * @param \Drupal\Core\Cache\CacheBackendInterface $bloomFilterStorage
@@ -83,12 +86,17 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
    *   The time service.
    * @param \Drupal\Core\Lock\LockBackendInterface $lock
    *   The lock service.
-   * @param string $bin
-   *   The cache bin for this filter.
    * @param array $filterOptions
    *   A keyed array of options to provide to the bloom filter.
    */
-  public function __construct(CacheBackendInterface $decoratedCache, CacheBackendInterface $bloomFilterStorage, TimeInterface $time, LockBackendInterface $lock, $bin, array $filterOptions = []) {
+  public function __construct(
+    $bin,
+    CacheBackendInterface $decoratedCache,
+    CacheBackendInterface $bloomFilterStorage,
+    TimeInterface $time,
+    LockBackendInterface $lock,
+    array $filterOptions = []
+  ) {
     $this->decoratedCache = $decoratedCache;
     $this->storage = $bloomFilterStorage;
     $this->time = $time;
@@ -96,7 +104,7 @@ class BloomFilterCacheDecorator implements CacheBackendInterface, DestructableIn
     $this->bin = $bin;
     $this->filterOptions = $filterOptions +
       [
-        'size' => 1000,
+        'size' => DatabaseBackend::DEFAULT_MAX_ROWS,
         'probability' => 0.01,
         'lifetime' => CacheBackendInterface::CACHE_PERMANENT,
       ];

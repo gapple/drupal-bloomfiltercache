@@ -11,6 +11,7 @@
     "source": "http://cgit.drupalcode.org/bloomfiltercache"
   },
   "require": {
+    "php": "^7.0",
     "pleonasm/bloom-filter": "^1.0.2"
   }
 }
